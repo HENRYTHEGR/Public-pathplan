@@ -4,19 +4,20 @@ import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.wpilibj.DriverStation;
 import edu.wpi.first.wpilibj.GenericHID.RumbleType;
+import edu.wpi.first.wpilibj2.command.Commands;
 import edu.wpi.first.wpilibj2.command.button.CommandXboxController;
 import edu.wpi.first.wpilibj2.command.button.Trigger;
 import igknighters.commands.HigherOrderCommands;
 import igknighters.commands.IndexerCommands;
-import igknighters.commands.IntakeCommands;
 import igknighters.commands.Shooter.AimingCommands;
 import igknighters.commands.Shooter.ShooterCommands;
 import igknighters.commands.SwerveCommands;
 import igknighters.commands.Wayfinder;
 import igknighters.constants.DrivingSharedState;
 import igknighters.subsystems.Subsystems;
+import igknighters.subsystems.YamsIntake.YamIntakeState;
 import java.util.function.DoubleSupplier;
-import vroom.LiveFollower;
+import java.util.function.Supplier;
 
 public class DriverController {
 
@@ -113,8 +114,7 @@ public class DriverController {
         var indexer = subsystems.indexer;
 
         if (debugType == DebugType.SWERVE) {
-            this.A.whileTrue(Wayfinder.driveToTarget(swerve, new Pose2d(0, 0, new Rotation2d(0))));
-            this.B.whileTrue(LiveFollower.driveLive(swerve, new Pose2d(8, 5, new Rotation2d(0))));
+            this.X.whileTrue(Wayfinder.driveToTarget(swerve, new Pose2d(3, 1, new Rotation2d(0))));
         } else if (debugType == DebugType.SHOOTER) {
             this.A.whileTrue(ShooterCommands.targetState(shooter, 5000, 90, 25));
             this.B.whileTrue(ShooterCommands.targetState(shooter, 5000, 180, 30));
@@ -135,32 +135,33 @@ public class DriverController {
             this.A.onTrue(IndexerCommands.dispense(indexer));
             this.B.onTrue(IndexerCommands.justStop(indexer));
         } else if (debugType == DebugType.INTAKE) {
-            this.A.whileTrue(IntakeCommands.holdAtIntake(subsystems.intake));
-            this.B.whileTrue(IntakeCommands.jorkIt(subsystems.intake));
-            this.X.whileTrue(IntakeCommands.slightJorkIntake(subsystems.intake));
-            this.Y.onTrue(IntakeCommands.toggleHoldState(subsystems.intake));
+            this.A.whileTrue(subsystems.intake.targetState(YamIntakeState.DEPLOYED));
+            this.B.whileTrue(subsystems.intake.targetState(YamIntakeState.STOWED));
         } else {
             System.out.println("UNKNOWN DEBUG TYPE: " + debugType);
             throw new IllegalArgumentException("UNKNOWN DEBUG TYPE: " + debugType);
         }
     }
 
+    public Supplier<Pose2d> poseSupplier(Subsystems subsystems) {
+        return () -> subsystems.swerve.getState().Pose;
+    }
+
     public void bind(final Subsystems subsystems) {
         var swerve = subsystems.swerve;
-        var intake = subsystems.intake;
 
-        this.LT
-                .whileTrue(IntakeCommands.holdAtIntake(subsystems.intake))
-                .onFalse(IntakeCommands.holdAtStow(subsystems.intake));
+        this.LT.whileTrue(subsystems.intake.targetState(YamIntakeState.DEPLOYED));
         this.RT
-                .whileTrue(HigherOrderCommands.rapidFireStream(subsystems))
+                .whileTrue(
+                        Commands.print("YOU PRESSED RT")
+                                .andThen(HigherOrderCommands.rapidFireStream(subsystems)))
                 .onFalse(HigherOrderCommands.IdleShooter(subsystems));
         this.DPR.whileTrue(IndexerCommands.unBlock(subsystems.indexer));
         this.RB.whileTrue(HigherOrderCommands.forceDispense(subsystems));
-        this.LB.whileTrue(IntakeCommands.intakeWhileSlightJorking(intake));
+        this.LB.whileTrue(subsystems.intake.jorkIntake());
         this.Start.onTrue(SwerveCommands.zeroGyro(swerve));
-        this.X.whileTrue(IntakeCommands.expell(subsystems.intake));
         this.DPD.whileTrue(ShooterCommands.homeHood(subsystems.shooter));
+        this.A.and(this.B).whileTrue(Wayfinder.driveToSafeSpot(swerve));
     }
 
     private DoubleSupplier deadbandSupplier(DoubleSupplier supplier, double deadband) {

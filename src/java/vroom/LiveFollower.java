@@ -1,6 +1,5 @@
 package vroom;
 
-import static edu.wpi.first.units.Units.MetersPerSecond;
 import static edu.wpi.first.units.Units.RadiansPerSecond;
 import static edu.wpi.first.units.Units.RotationsPerSecond;
 
@@ -13,24 +12,28 @@ import edu.wpi.first.math.geometry.Translation2d;
 import edu.wpi.first.math.kinematics.ChassisSpeeds;
 import edu.wpi.first.wpilibj2.command.Command;
 import edu.wpi.first.wpilibj2.command.Commands;
+import igknighters.Robot;
 import igknighters.subsystems.swerve.Swerve;
-import igknighters.subsystems.swerve.swerveconstants.knightshadeConsts;
 import java.util.ArrayList;
 import java.util.Set;
+import vroom.Fields.REBUILT;
 
 public class LiveFollower {
     private static SwerveRequest.FieldCentric m_driveRequest =
             new SwerveRequest.FieldCentric()
-                    .withDeadband(knightshadeConsts.kSpeedAt12Volts.in(MetersPerSecond) * 0.1)
+                    .withDeadband(
+                            Robot.consts
+                                            .swerve()
+                                            .getCommonSwerveConsts()
+                                            .getMaxSpeedMetersPerSecond()
+                                    * 0.1)
                     .withRotationalDeadband(RotationsPerSecond.of(0.75).in(RadiansPerSecond) * .1)
                     .withDriveRequestType(SwerveModule.DriveRequestType.OpenLoopVoltage)
                     .withSteerRequestType(SwerveModule.SteerRequestType.MotionMagicExpo)
                     .withForwardPerspective(ForwardPerspectiveValue.BlueAlliance);
 
     private static PIDController thetaController = new PIDController(1.0, 0, 0);
-    private static Field field = new Field();
-
-    public LiveFollower() {}
+    private static Field field = new REBUILT();
 
     private static Translation2d calculateTotalForce(Translation2d current, Translation2d target) {
         Translation2d attractive = target.minus(current);
@@ -86,11 +89,16 @@ public class LiveFollower {
         // 4. Scale to Max Speed
         // We don't want to exceed robot limits
         Translation2d driveVector = new Translation2d(desiredVx, desiredVy);
-        if (driveVector.getNorm() > knightshadeConsts.kSpeedAt12Volts.in(MetersPerSecond)) {
+        if (driveVector.getNorm()
+                > Robot.consts.swerve().getCommonSwerveConsts().getMaxSpeedMetersPerSecond()) {
             driveVector =
                     driveVector
                             .div(driveVector.getNorm())
-                            .times(knightshadeConsts.kSpeedAt12Volts.in(MetersPerSecond));
+                            .times(
+                                    Robot.consts
+                                            .swerve()
+                                            .getCommonSwerveConsts()
+                                            .getMaxSpeedMetersPerSecond());
         }
 
         return new ChassisSpeeds(driveVector.getX(), driveVector.getY(), rotationOutput);

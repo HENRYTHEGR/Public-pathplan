@@ -16,14 +16,16 @@ import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj2.command.Command;
 import edu.wpi.first.wpilibj2.command.SubsystemBase;
 import edu.wpi.first.wpilibj2.command.sysid.SysIdRoutine;
+import igknighters.Robot;
 import igknighters.constants.Conv;
-import igknighters.subsystems.swerve.swerveconstants.SwerveConsts;
+import igknighters.subsystems.swerve.swerveconstants.CommonSwerveConsts;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
+import org.littletonrobotics.junction.Logger;
 
 public class Swerve extends SubsystemBase {
     CommandSwerveDrivetrain drivetrain;
-    SwerveConsts swerveConsts = new SwerveConsts();
+    CommonSwerveConsts commonSwerveConsts;
     boolean isSwerveDisabled = false;
     DummySwerve dummySwerve = new DummySwerve();
 
@@ -34,7 +36,8 @@ public class Swerve extends SubsystemBase {
     public Swerve(boolean isSwerveDisabled) {
         this.isSwerveDisabled = isSwerveDisabled;
         if (!isSwerveDisabled) {
-            drivetrain = swerveConsts.getSwerveConsts().createDrivetrain(this);
+            drivetrain = Robot.consts.swerve().getCommonSwerveConsts().createDrivetrain(this);
+            commonSwerveConsts = Robot.consts.swerve().getCommonSwerveConsts();
         }
     }
 
@@ -42,6 +45,11 @@ public class Swerve extends SubsystemBase {
     public void periodic() {
         if (!isSwerveDisabled) {
             drivetrain.periodic();
+            if (Robot.isRobotTest()) {
+                Logger.recordOutput(
+                        "ROBOT/TEST/SWERVE/CURRENT ROTATION DEGREES",
+                        drivetrain.getPigeon2().getYaw().getValueAsDouble());
+            }
         }
     }
 
@@ -147,20 +155,36 @@ public class Swerve extends SubsystemBase {
     }
 
     public double getMaxSpeedMetersPerSecond() {
-        return swerveConsts.getSwerveConsts().getMaxSpeedMetersPerSecond();
+        if (!isSwerveDisabled) {
+            return commonSwerveConsts.getMaxSpeedMetersPerSecond();
+        } else {
+            return 0.0;
+        }
     }
 
     public double getXAcceleration() {
-        return drivetrain.getPigeon2().getAccelerationX().getValueAsDouble();
+        if (!isSwerveDisabled) {
+            return drivetrain.getPigeon2().getAccelerationX().getValueAsDouble();
+        } else {
+            return 0.0;
+        }
     }
 
     public double getYAcceleration() {
-        return drivetrain.getPigeon2().getAccelerationY().getValueAsDouble();
+        if (!isSwerveDisabled) {
+            return drivetrain.getPigeon2().getAccelerationY().getValueAsDouble();
+        } else {
+            return 0.0;
+        }
     }
 
     public double getRotationalVelocity() {
-        return drivetrain.getPigeon2().getAngularVelocityZDevice().getValueAsDouble()
-                * Conv.DEGREES_TO_RADIANS;
+        if (!isSwerveDisabled) {
+            return drivetrain.getPigeon2().getAngularVelocityZDevice().getValueAsDouble()
+                    * Conv.DEGREES_TO_RADIANS;
+        } else {
+            return 0.0;
+        }
     }
 
     private AutoTrajectory activeTrajectory = null;

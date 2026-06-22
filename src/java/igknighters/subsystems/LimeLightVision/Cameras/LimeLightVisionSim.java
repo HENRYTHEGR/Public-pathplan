@@ -32,7 +32,7 @@ public class LimeLightVisionSim extends LimeLights {
                             cameraRotations.get(i)[0],
                             cameraRotations.get(i)[1],
                             5,
-                            0.01,
+                            0.0001,
                             0.0,
                             0.1));
         }
@@ -61,6 +61,12 @@ public class LimeLightVisionSim extends LimeLights {
         }
         return PoseAverager.averagePose2ds(estimatedPoses);
     }
+
+    @Override
+    public void enableCameras(int imu_mode) {}
+
+    @Override
+    public void saveCameras() {}
 
     @Override
     public double getLastTimeStamp() {

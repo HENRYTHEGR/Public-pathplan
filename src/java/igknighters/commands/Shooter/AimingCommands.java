@@ -6,16 +6,15 @@ import static edu.wpi.first.units.Units.RPM;
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Pose3d;
 import edu.wpi.first.wpilibj2.command.Command;
+import edu.wpi.first.wpilibj2.command.Commands;
 import igknighters.Robot;
-import igknighters.commands.Shooter.ShooterCommands.shotType;
-import igknighters.constants.FieldConstants;
+import igknighters.constants.DrivingSharedState;
 import igknighters.constants.ShootInformation;
-import igknighters.subsystems.shooter.Shooter;
-import igknighters.subsystems.shooter.ShooterState;
-import igknighters.subsystems.shooter.ShootingData;
-import igknighters.subsystems.shooter.solvers.Math.LerpSolveShot;
-import igknighters.util.log.Log;
-import java.util.function.BooleanSupplier;
+import igknighters.subsystems.YamShooter.Shooter;
+import igknighters.subsystems.YamShooter.Shooter.shotType;
+import igknighters.subsystems.YamShooter.ShooterState;
+import igknighters.subsystems.YamShooter.ShootingData;
+import igknighters.subsystems.YamShooter.solvers.Math.LerpSolveShot;
 import java.util.function.Supplier;
 
 public class AimingCommands {
@@ -33,60 +32,29 @@ public class AimingCommands {
         return getShooterPoseWithOffset(() -> Robot.pose_pred.getDynamicPredictedPose()).get();
     }
 
-    /**
-     * aims without changing hood or rpm so that the shooter can go under bump
-     *
-     * @param shooter
-     * @param robotPoseSupplier
-     * @param robotVelocitySupplier
-     * @return
-     */
-    public static Command idleCommand(Shooter shooter) {
+    public static Command idleShooter(Shooter shooter) {
 
         ShootInformation info = ShootInformation.getInstance();
-        return shooter.run(
-                () -> {
-                    info.setBeingControlled(false);
-                    Pose3d targetPose = info.getShotLocation();
+        return Commands.run(
+                        () -> {
+                            info.setBeingControlled(false);
+                            Pose3d targetPose = info.getShotLocation();
 
-                    ShooterState targetingData =
-                            LerpSolveShot.solve(
-                                    targetPose,
-                                    shooter.getCurrentState().flywheelSpeed.in(RPM),
-                                    0.0);
+                            ShooterState targetingData =
+                                    LerpSolveShot.solve(
+                                            targetPose,
+                                            shooter.getCurrentState().flywheelSpeed.in(RPM),
+                                            0.0);
 
-                    shooter.targetState(
-                            RPM.of(3000),
-                            targetingData.turretAngle,
-                            Degrees.of(Robot.consts.shooter().kHood().MIN_ANGLE_DEGREES()));
-                });
-    }
-
-    public static BooleanSupplier isUnderTrench() {
-
-        return () -> {
-            Pose2d turretPose = getTurretPose();
-
-            double dx1 = Math.abs(turretPose.getX() - FieldConstants.BUMP.BUMP_1_X_METERS);
-            double dx2 = Math.abs(turretPose.getX() - FieldConstants.BUMP.BUMP_2_X_METERS);
-
-            boolean under1 = dx1 <= .5;
-            boolean under2 = dx2 <= .5;
-
-            boolean isUnder = under1 || under2;
-            if (!Robot.consts.disableAllLogs()) {
-                Log.log("ROBOT/Commands/Shooter/Trench Protection/DX_BLUE", dx1);
-
-                Log.log("ROBOT/Commands/Shooter/Trench Protection/DX_RED", dx2);
-
-                Log.log("ROBOT/Commands/Shooter/Trench Protection/isUnderTrench", isUnder);
-                Log.log("ROBOT/Commands/Shooter/Trench Protection/Under 1", under1);
-                Log.log("ROBOT/Commands/Shooter/Trench Protection/Under 2", under2);
-                Log.log("ROBOT/Commands/Shooter/Trench Protection/RobotX", turretPose.getX());
-            }
-
-            return isUnder;
-        };
+                            shooter.targetState(
+                                    RPM.of(3000),
+                                    targetingData.turretAngle,
+                                    Degrees.of(Robot.consts.shooter().kHood().MIN_ANGLE_DEGREES()));
+                        },
+                        shooter.hood,
+                        shooter.flywheels,
+                        shooter.turret)
+                .withName("IDLE ENTIRE SHOOTER : NOT DEFAULT COMMAND");
     }
 
     public static shotType getShotType() {
@@ -147,49 +115,66 @@ public class AimingCommands {
     public static double maxHeightMeters = 4.8;
 
     public static Command shootWithProtectionAndAgregiousMaxHeight(Shooter shooter) {
-        BooleanSupplier underTrenchCheck = isUnderTrench();
-        return shooter.run(
-                () -> {
-                    if (underTrenchCheck.getAsBoolean()) {
-                        idleOnce(shooter);
-                    } else {
-                        shootOnce(shooter);
-                    }
-                });
+        return Commands.run(
+                        () -> {
+                            Boolean underTrenchCheck = DrivingSharedState.getInstance().underTrench;
+                            if (underTrenchCheck) {
+                                idleOnce(shooter);
+                            } else {
+                                shootOnce(shooter);
+                            }
+                        },
+                        shooter.turret,
+                        shooter.hood,
+                        shooter.flywheels)
+                .withName("SHOOT WITH PROTECTION AND AGRETIOUS MAX HEIGHT");
     }
 
     public static Command shootWithProtection(Shooter shooter) {
-        BooleanSupplier underTrenchCheck = isUnderTrench();
 
-        return shooter.run(
-                () -> {
-                    if (underTrenchCheck.getAsBoolean()) {
-                        idleOnce(shooter);
-                    } else {
-                        shootOnce(shooter);
-                    }
-                });
+        return Commands.run(
+                        () -> {
+                            Boolean underTrenchCheck = DrivingSharedState.getInstance().underTrench;
+                            if (underTrenchCheck) {
+                                idleOnce(shooter);
+                            } else {
+                                shootOnce(shooter);
+                            }
+                        },
+                        shooter.turret,
+                        shooter.hood,
+                        shooter.flywheels)
+                .withName("SHOOT WITH PROTECTION");
     }
 
     public static Command SHOOT_AT_TARGET(Shooter shooter, Pose3d targetPose) {
-        return shooter.run(
-                () -> {
-                    ShooterState targetingData =
-                            LerpSolveShot.solve(
-                                    targetPose,
-                                    shooter.getCurrentState().flywheelSpeed.in(RPM),
-                                    0.02);
+        return Commands.run(
+                        () -> {
+                            ShooterState targetingData =
+                                    LerpSolveShot.solve(
+                                            targetPose,
+                                            shooter.getCurrentState().flywheelSpeed.in(RPM),
+                                            0.02);
 
-                    if (targetingData.flywheelSpeed.in(RPM) != 0) {
-                        shooter.targetState(targetingData);
-                    } else {
-                        // shot is imposible so we should idle the shooter rpm at like 4000 so it
-                        // spins up faster
-                        shooter.targetState(
-                                RPM.of(3000),
-                                targetingData.turretAngle,
-                                Degrees.of(Robot.consts.shooter().kHood().MIN_ANGLE_DEGREES()));
-                    }
-                });
+                            if (targetingData.flywheelSpeed.in(RPM) != 0) {
+                                shooter.targetState(targetingData);
+                            } else {
+                                // shot is imposible so we should idle the shooter rpm at like 4000
+                                // so it
+                                // spins up faster
+                                shooter.targetState(
+                                        RPM.of(3000),
+                                        targetingData.turretAngle,
+                                        Degrees.of(
+                                                Robot.consts
+                                                        .shooter()
+                                                        .kHood()
+                                                        .MIN_ANGLE_DEGREES()));
+                            }
+                        },
+                        shooter.turret,
+                        shooter.hood,
+                        shooter.flywheels)
+                .withName("SHOOT AT TARGET");
     }
 }

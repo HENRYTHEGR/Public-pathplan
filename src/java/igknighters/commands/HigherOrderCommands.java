@@ -9,12 +9,11 @@ import igknighters.commands.Shooter.AimingCommands;
 import igknighters.constants.DrivingSharedState;
 import igknighters.constants.FieldConstants;
 import igknighters.subsystems.Subsystems;
+import java.util.function.Supplier;
 
 public class HigherOrderCommands {
     public static Command shootTillEmpty(Subsystems subsystems, double timeout) {
-        return Commands.parallel(
-                        rapidFireStream(subsystems),
-                        IntakeCommands.largeJorkIntake(subsystems.intake))
+        return Commands.parallel(rapidFireStream(subsystems), subsystems.intake.jorkIntake())
                 .withTimeout(timeout)
                 .andThen(Commands.print("ALL BALLS SHOT CONTINUING")); // this is a placeholder for
         // IndexerCommands.isBallPresent()
@@ -29,7 +28,7 @@ public class HigherOrderCommands {
 
         return Commands.parallel(
                         shooterCommand.repeatedly(),
-                        IndexerCommands.smartDispense(subsystems.indexer))
+                        IndexerCommands.smartDispense(subsystems.indexer).repeatedly())
                 .withName("SMART STREAM");
     }
 
@@ -56,10 +55,10 @@ public class HigherOrderCommands {
     }
 
     public static Command IdleShooter(Subsystems subsystems) {
-        return AimingCommands.idleCommand(subsystems.shooter)
+        return AimingCommands.idleShooter(subsystems.shooter)
                 .alongWith(IndexerCommands.jorkIt(subsystems.indexer).repeatedly())
                 .alongWith(Commands.runOnce(() -> DrivingSharedState.getInstance().setDetune(1.0)))
-                .withName("IDLING THE SHOOTER");
+                .withName("IDLING THE SHOOTER : HIGHER ORDER COMMAND");
     }
 
     public static Command forceDispense(Subsystems subsystems) {
@@ -96,8 +95,10 @@ public class HigherOrderCommands {
     }
 
     public static Command hippoShoot(Subsystems subsystems) {
-        return Commands.parallel(
-                rapidFireStream(subsystems),
-                IntakeCommands.intakeWhileSlightJorking(subsystems.intake));
+        return Commands.parallel(rapidFireStream(subsystems), subsystems.intake.jorkIntake());
+    }
+
+    public Supplier<Pose2d> poseSupplier(Subsystems subsystems) {
+        return () -> subsystems.swerve.getState().Pose;
     }
 }

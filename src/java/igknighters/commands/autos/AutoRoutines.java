@@ -1,7 +1,6 @@
 package igknighters.commands.autos;
 
 import static edu.wpi.first.units.Units.Degrees;
-import static edu.wpi.first.units.Units.MetersPerSecond;
 import static edu.wpi.first.units.Units.RPM;
 import static edu.wpi.first.units.Units.RadiansPerSecond;
 import static edu.wpi.first.units.Units.RotationsPerSecond;
@@ -20,14 +19,12 @@ import edu.wpi.first.wpilibj2.command.button.Trigger;
 import igknighters.Robot;
 import igknighters.commands.HigherOrderCommands;
 import igknighters.commands.IndexerCommands;
-import igknighters.commands.IntakeCommands;
 import igknighters.commands.Shooter.ShooterCommands;
 import igknighters.commands.SwerveCommands;
 import igknighters.constants.RobotConsts;
 import igknighters.subsystems.Subsystems;
-import igknighters.subsystems.intake.IntakeState;
-import igknighters.subsystems.shooter.ShooterState;
-import igknighters.subsystems.swerve.swerveconstants.knightshadeConsts;
+import igknighters.subsystems.YamShooter.ShooterState;
+import igknighters.subsystems.YamsIntake.YamIntakeState;
 import java.util.function.Supplier;
 
 public class AutoRoutines extends AutoCommands {
@@ -93,42 +90,6 @@ public class AutoRoutines extends AutoCommands {
         return routine;
     }
 
-    public AutoRoutine rightNuetralHippo() {
-        AutoRoutine routine = autoFactory.newRoutine("Right Neutral Hippo");
-
-        AutoTrajectory moveTraj = routine.trajectory("RIGHT_NEUTRAL_HIPPO.traj");
-
-        routine.active()
-                .onTrue(
-                        Commands.sequence(
-                                        moveTraj.resetOdometry(),
-                                        HigherOrderCommands.shootTillEmpty(subsystems, 5),
-                                        Commands.parallel(
-                                                IntakeCommands.holdAtIntake(subsystems.intake),
-                                                Commands.sequence(
-                                                        Commands.runOnce(
-                                                                () ->
-                                                                        subsystems.shooter
-                                                                                .targetState(
-                                                                                        RPM.of(
-                                                                                                2000),
-                                                                                        Degrees.of(
-                                                                                                0.0),
-                                                                                        Degrees.of(
-                                                                                                Robot
-                                                                                                        .consts
-                                                                                                        .shooter()
-                                                                                                        .kHood()
-                                                                                                        .MIN_ANGLE_DEGREES()))),
-                                                        Commands.waitSeconds(1.0),
-                                                        HigherOrderCommands.rapidFireStream(
-                                                                subsystems)),
-                                                moveTraj.cmd()))
-                                .withName("RIGHT NUETRAL HIPPO"));
-        moveTraj.atTimeBeforeEnd(0.0).onTrue(SwerveCommands.stopDriving(swerve));
-        return routine;
-    }
-
     public AutoRoutine PASS_TO_SELF_RIGHT_WITH_DEPOT_AND_HUMAN_PLAYER() {
         AutoRoutine routine =
                 autoFactory.newRoutine("Pass to Self Right with Depot and Human Player");
@@ -156,17 +117,16 @@ public class AutoRoutines extends AutoCommands {
 
         routine.active().onTrue(Commands.sequence(swipe1Out.resetOdometry(), swipe1Out.cmd()));
 
-        swipe1Out.active().onTrue(IntakeCommands.holdAtIntake(subsystems.intake));
+        swipe1Out.active().onTrue(subsystems.intake.targetState(YamIntakeState.DEPLOYED));
 
-        swipe1Out.done().onTrue(swipe1In.cmd());
+        swipe1Out.done().onTrue(swipe1In.spawnCmd());
 
         swipe1In.done()
                 .onTrue(
-                        HigherOrderCommands.shootTillEmpty(subsystems, 3.5)
-                                .andThen(
-                                        Commands.parallel(
-                                                loopDiDoop.cmd(),
-                                                IntakeCommands.holdAtIntake(subsystems.intake))));
+                        HigherOrderCommands.shootTillEmpty(subsystems, 4)
+                                .andThen(loopDiDoop.spawnCmd()));
+
+        loopDiDoop.active().onTrue(subsystems.intake.targetState(YamIntakeState.DEPLOYED));
 
         loopDiDoop
                 .done()
@@ -182,7 +142,12 @@ public class AutoRoutines extends AutoCommands {
 
         final SwerveRequest.FieldCentric m_driveRequest =
                 new SwerveRequest.FieldCentric()
-                        .withDeadband(knightshadeConsts.kSpeedAt12Volts.in(MetersPerSecond) * 0.1)
+                        .withDeadband(
+                                Robot.consts
+                                                .swerve()
+                                                .getCommonSwerveConsts()
+                                                .getMaxSpeedMetersPerSecond()
+                                        * 0.1)
                         .withRotationalDeadband(
                                 RotationsPerSecond.of(0.75).in(RadiansPerSecond) * .1)
                         .withDriveRequestType(SwerveModule.DriveRequestType.OpenLoopVoltage)
@@ -214,7 +179,10 @@ public class AutoRoutines extends AutoCommands {
                                                                         .MIN_ANGLE_DEGREES())))
                                         .withTimeout(2),
                                 // shooter tested
-                                IntakeCommands.holdAtIntake(subsystems.intake).withTimeout(4.0),
+                                subsystems
+                                        .intake
+                                        .targetState(YamIntakeState.DEPLOYED)
+                                        .withTimeout(4.0),
                                 // feed ball here
                                 Commands.parallel(
                                                 ShooterCommands.targetState(
@@ -260,6 +228,74 @@ public class AutoRoutines extends AutoCommands {
         return routine;
     }
 
+    public AutoRoutine OP_LEFT() {
+        AutoRoutine routine = autoFactory.newRoutine("OP LEFT");
+
+        AutoTrajectory firstLoop = routine.trajectory("OP_LEFT_1.traj");
+        AutoTrajectory transitionToSecondLoop = routine.trajectory("OP_LEFT_2.traj");
+        AutoTrajectory secondLoop = routine.trajectory("OP_LEFT_3.traj");
+
+        routine.active().onTrue(Commands.sequence(firstLoop.resetOdometry(), firstLoop.spawnCmd()));
+
+        firstLoop.active().onTrue(subsystems.intake.targetState(YamIntakeState.DEPLOYED));
+
+        firstLoop
+                .atTime("PROTECT")
+                .onTrue(subsystems.intake.targetState(YamIntakeState.PARTIAL_STOW));
+
+        firstLoop
+                .done()
+                .onTrue(
+                        Commands.parallel(
+                                HigherOrderCommands.shootTillEmpty(subsystems, 4.0),
+                                transitionToSecondLoop.cmd()));
+
+        transitionToSecondLoop.done().onTrue(secondLoop.spawnCmd());
+
+        secondLoop.active().onTrue(subsystems.intake.targetState(YamIntakeState.DEPLOYED));
+
+        secondLoop
+                .atTime("PROTECT_INTAKE_2")
+                .onTrue(subsystems.intake.targetState(YamIntakeState.PARTIAL_STOW));
+        secondLoop.atTime("SHOOT_2").onTrue(HigherOrderCommands.shootTillEmpty(subsystems, 5));
+        secondLoop.done().onTrue(HigherOrderCommands.shootTillEmpty(subsystems, 10));
+
+        return routine;
+    }
+
+    public AutoRoutine OP_RIGHT() {
+        AutoRoutine routine = autoFactory.newRoutine("OP RIGHT");
+
+        AutoTrajectory firstLoop = routine.trajectory("OP_RIGHT_1.traj");
+        AutoTrajectory transitionToSecondLoop = routine.trajectory("OP_RIGHT_2.traj");
+        AutoTrajectory secondLoop = routine.trajectory("OP_RIGHT_3.traj");
+
+        routine.active().onTrue(Commands.sequence(firstLoop.resetOdometry(), firstLoop.spawnCmd()));
+
+        firstLoop.active().onTrue(subsystems.intake.targetState(YamIntakeState.DEPLOYED));
+
+        firstLoop
+                .atTime("PROTECT")
+                .onTrue(subsystems.intake.targetState(YamIntakeState.PARTIAL_STOW));
+        firstLoop
+                .done()
+                .onTrue(
+                        Commands.parallel(
+                                HigherOrderCommands.shootTillEmpty(subsystems, 4.0),
+                                transitionToSecondLoop.cmd()));
+
+        transitionToSecondLoop.done().onTrue(secondLoop.cmd());
+
+        secondLoop.active().onTrue(subsystems.intake.targetState(YamIntakeState.DEPLOYED));
+
+        secondLoop
+                .atTime("Protect_intake")
+                .onTrue(subsystems.intake.targetState(YamIntakeState.PARTIAL_STOW));
+        secondLoop.done().onTrue(HigherOrderCommands.shootTillEmpty(subsystems, 10));
+
+        return routine;
+    }
+
     public AutoRoutine BUMP_PASS_TO_SELF_LEFT() {
         AutoRoutine routine = autoFactory.newRoutine("Bump Pass to Self Left");
 
@@ -274,12 +310,13 @@ public class AutoRoutines extends AutoCommands {
 
         trajectory.atTime("HIPPO").onTrue(HigherOrderCommands.hippoShoot(subsystems));
 
-        trajectory.atTime("JUST INTAKE").onTrue(IntakeCommands.holdAtIntake(subsystems.intake));
+        trajectory
+                .atTime("JUST INTAKE")
+                .onTrue(subsystems.intake.targetState(YamIntakeState.DEPLOYED));
 
         trajectory
                 .atTime("PROTECT INTAKE")
-                .onTrue(IntakeCommands.holdAtState(subsystems.intake, IntakeState.partialStow));
-
+                .onTrue(subsystems.intake.targetState(YamIntakeState.PARTIAL_STOW));
         trajectory
                 .atTime("START SHOOTING AGAIN")
                 .onTrue(HigherOrderCommands.hippoShoot(subsystems));
@@ -287,7 +324,7 @@ public class AutoRoutines extends AutoCommands {
                 .atTime("NO MUNCH HIPPO")
                 .onTrue(
                         HigherOrderCommands.rapidFireStream(subsystems)
-                                .alongWith(IntakeCommands.holdAtIntake(subsystems.intake)));
+                                .alongWith(subsystems.intake.targetState(YamIntakeState.DEPLOYED)));
 
         trajectory
                 .done()
@@ -325,7 +362,9 @@ public class AutoRoutines extends AutoCommands {
         // better then none
         meanTrajectory.active().onTrue(HigherOrderCommands.hippoShoot(subsystems));
         // start preserving balls for shots instead of just stealing to our side
-        meanTrajectory.atTime("INTAKE").onTrue(IntakeCommands.holdAtIntake(subsystems.intake));
+        meanTrajectory
+                .atTime("INTAKE")
+                .onTrue(subsystems.intake.targetState(YamIntakeState.DEPLOYED));
         // back on our side so shoot gathered balls + human player station
         meanTrajectory.atTime("SCORE").onTrue(HigherOrderCommands.hippoShoot(subsystems));
         return routine;
@@ -344,7 +383,7 @@ public class AutoRoutines extends AutoCommands {
                                 HigherOrderCommands.shootTillEmpty(subsystems, 4),
                                 intakeTrajectory.cmd()));
 
-        intakeTrajectory.active().onTrue(IntakeCommands.holdAtIntake(subsystems.intake));
+        intakeTrajectory.active().onTrue(subsystems.intake.targetState(YamIntakeState.DEPLOYED));
 
         intakeTrajectory.done().onTrue(scoringTrajectory.cmd());
 
@@ -379,7 +418,7 @@ public class AutoRoutines extends AutoCommands {
                                 intakeTrajectory.resetOdometry(),
                                 HigherOrderCommands.shootTillEmpty(subsystems, 5),
                                 Commands.parallel(
-                                        IntakeCommands.holdAtIntake(subsystems.intake),
+                                        subsystems.intake.targetState(YamIntakeState.DEPLOYED),
                                         intakeTrajectory.cmd())));
 
         intakeTrajectory
@@ -410,10 +449,10 @@ public class AutoRoutines extends AutoCommands {
         AutoTrajectory swipe2Loop = routine.trajectory("ORBIT_RIGHT_3.traj");
         routine.active().onTrue(Commands.sequence(swipe1Out.resetOdometry(), swipe1Out.cmd()));
 
-        swipe1Out.active().onTrue(IntakeCommands.holdAtIntake(subsystems.intake));
+        swipe1Out.active().onTrue(subsystems.intake.targetState(YamIntakeState.DEPLOYED));
         swipe1Out.done().onTrue(swipe1In.cmd());
 
-        swipe1In.active().onTrue(IntakeCommands.holdAtIntake(subsystems.intake));
+        swipe1In.active().onTrue(subsystems.intake.targetState(YamIntakeState.DEPLOYED));
 
         swipe1In.done()
                 .onTrue(
@@ -422,7 +461,7 @@ public class AutoRoutines extends AutoCommands {
                                 HigherOrderCommands.shootTillEmpty(subsystems, 5),
                                 Commands.parallel(
                                         swipe2Loop.cmd(),
-                                        IntakeCommands.holdAtIntake(subsystems.intake),
+                                        subsystems.intake.targetState(YamIntakeState.DEPLOYED),
                                         HigherOrderCommands.IdleShooter(subsystems))));
 
         swipe2Loop
@@ -467,9 +506,13 @@ public class AutoRoutines extends AutoCommands {
 
         routine.active().onTrue(Commands.sequence(move_traj.resetOdometry(), move_traj.cmd()));
 
-        move_traj.atTime("SHOOT").onTrue(HigherOrderCommands.hippoShoot(subsystems));
+        move_traj.active().onTrue(subsystems.intake.targetState(YamIntakeState.DEPLOYED));
 
-        move_traj.done().onTrue(SwerveCommands.stopDriving(swerve));
+        move_traj
+                .done()
+                .onTrue(
+                        SwerveCommands.stopDriving(swerve)
+                                .andThen(HigherOrderCommands.shootTillEmpty(subsystems, 15)));
         return routine;
     }
 
@@ -486,7 +529,7 @@ public class AutoRoutines extends AutoCommands {
                                 Commands.waitSeconds(5),
                                 Commands.parallel(tangential_traj.cmd())));
 
-        tangential_traj.active().onTrue(IntakeCommands.holdAtIntake(subsystems.intake));
+        tangential_traj.active().onTrue(subsystems.intake.targetState(YamIntakeState.DEPLOYED));
 
         tangential_traj.atTime("SHOOT").onTrue(HigherOrderCommands.hippoShoot(subsystems));
 
@@ -506,7 +549,7 @@ public class AutoRoutines extends AutoCommands {
                                 SwerveCommands.stopDriving(swerve),
                                 Commands.deadline(
                                         Commands.waitSeconds(5),
-                                        IntakeCommands.holdAtIntake(subsystems.intake)),
+                                        subsystems.intake.targetState(YamIntakeState.DEPLOYED)),
                                 Commands.parallel(
                                         HigherOrderCommands.hippoShoot(subsystems),
                                         radial_away_traj.cmd())));
@@ -536,9 +579,10 @@ public class AutoRoutines extends AutoCommands {
                                         HigherOrderCommands.shootTillEmpty(subsystems, 5),
                                         Commands.print("FINISHED EMPTYING HOPPER"),
                                         Commands.parallel(
-                                                IntakeCommands.holdAtIntake(subsystems.intake),
+                                                subsystems.intake.targetState(
+                                                        YamIntakeState.DEPLOYED),
                                                 Commands.sequence(
-                                                        subsystems.shooter.runOnce(
+                                                        Commands.runOnce(
                                                                 () ->
                                                                         subsystems.shooter
                                                                                 .targetState(
@@ -551,7 +595,10 @@ public class AutoRoutines extends AutoCommands {
                                                                                                         .consts
                                                                                                         .shooter()
                                                                                                         .kHood()
-                                                                                                        .MIN_ANGLE_DEGREES()))),
+                                                                                                        .MIN_ANGLE_DEGREES())),
+                                                                subsystems.shooter.hood,
+                                                                subsystems.shooter.flywheels,
+                                                                subsystems.shooter.turret),
                                                         Commands.waitSeconds(1.0),
                                                         HigherOrderCommands.rapidFireStream(
                                                                 subsystems)),

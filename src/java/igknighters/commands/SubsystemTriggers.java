@@ -1,5 +1,6 @@
 package igknighters.commands;
 
+import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Pose3d;
 import edu.wpi.first.math.geometry.Rotation3d;
 import edu.wpi.first.networktables.NetworkTable;
@@ -12,17 +13,20 @@ import edu.wpi.first.wpilibj2.command.button.RobotModeTriggers;
 import edu.wpi.first.wpilibj2.command.button.Trigger;
 import igknighters.commands.LEDCommands.LEDSection;
 import igknighters.commands.Shooter.AimingCommands;
-import igknighters.commands.Shooter.ShooterCommands;
+import igknighters.commands.teleop.AutoRotateOnBump;
 import igknighters.commands.teleop.SlowedDownDrivingWhileShooting;
 import igknighters.constants.Conv;
+import igknighters.constants.DrivingSharedState;
 import igknighters.constants.FieldConstants;
 import igknighters.constants.ShootInformation;
 import igknighters.controllers.DriverController;
 import igknighters.subsystems.Subsystems;
+import igknighters.subsystems.YamShooter.Shooter.shotType;
 import igknighters.subsystems.led.Led;
 import igknighters.subsystems.led.LedUtil;
 import igknighters.subsystems.swerve.Swerve;
 import java.util.function.BooleanSupplier;
+import java.util.function.Supplier;
 
 public class SubsystemTriggers {
     private final Trigger disabled = RobotModeTriggers.disabled();
@@ -179,21 +183,32 @@ public class SubsystemTriggers {
                 .withName("DisabledRed");
     }
 
-    public void SetupTriggers(Subsystems subsystems, DriverController driverController) {
+    public void SetupTriggers(
+            Subsystems subsystems,
+            DriverController driverController,
+            Supplier<Pose2d> poseSupplier) {
         Led led = subsystems.led;
         Swerve swerve = subsystems.swerve;
         Trigger onBump = new Trigger(() -> FieldConstants.BUMP.isInside(swerve.getState().Pose));
 
-        Trigger trenchProtection = new Trigger(AimingCommands.isUnderTrench());
+        Trigger trenchProtection = new Trigger(() -> DrivingSharedState.getInstance().underTrench);
 
         SetupOperatorController(subsystems);
 
         // onBump.and(teleop)
-        //         .whileTrue(
-        //                 Commands.runOnce(() -> DrivingSharedState.getInstance().setOnBump(true))
-        //                         .andThen(new AutoRotateOnBump(swerve, driverController)));
+        //        .whileTrue(
+        //                Commands.runOnce(() -> DrivingSharedState.getInstance().setOnBump(true))
+        //                        .andThen(new AutoRotateOnBump(swerve, driverController)));
         // onBump.onFalse(Commands.runOnce(() ->
         // DrivingSharedState.getInstance().setOnBump(false)));
+
+        onBump.and(teleop)
+                .whileTrue(
+                        Commands.sequence(
+                                Commands.runOnce(
+                                        () -> DrivingSharedState.getInstance().setOnBump(true)),
+                                new AutoRotateOnBump(swerve, driverController)));
+        onBump.onFalse(Commands.runOnce(() -> DrivingSharedState.getInstance().setOnBump(false)));
 
         falseOnce().and(disabled).whileTrue(disabledLED(led));
 
@@ -210,22 +225,23 @@ public class SubsystemTriggers {
                 .onFalse(getLEDCommandByMode(led));
         ableToShootState
                 .canShoot()
-                .whileTrue(LEDCommands.run(led, LEDPattern.solid(Color.kYellow)))
+                .whileTrue(LEDCommands.run(led, LEDPattern.solid(Color.kMagenta)))
                 .onFalse(getLEDCommandByMode(led));
 
         ableToShootState
                 .beingControlledTrigger()
                 .and(teleop)
-                .and(() -> AimingCommands.getShotType() == ShooterCommands.shotType.SHOT)
+                .and(() -> AimingCommands.getShotType() == shotType.SHOT)
                 .whileTrue(new SlowedDownDrivingWhileShooting(swerve, driverController));
 
         // rumble
         shouldRumble =
                 new Trigger(() -> subsystems.vision.timeSinceLastSample() < 0.1)
                         .and(falseOnce())
+                        .and(teleop)
                         .whileTrue(
                                 Commands.startEnd(
-                                                () -> driverController.rumble(0.03),
+                                                () -> driverController.rumble(.30),
                                                 () -> driverController.rumble(0.0))
                                         .ignoringDisable(true)
                                         .withName("RumbleForTag"));

@@ -27,6 +27,8 @@ import java.util.Optional;
 public class RobotPosePredictor {
     Swerve swerve;
 
+    // input is rotational speed
+
     /**
      * Returns the best possible pose prediction based on current state. Automatically switches to
      * Auto prediction if a trajectory is active.
@@ -149,8 +151,8 @@ public class RobotPosePredictor {
         // handle wrapping
         double predOmega =
                 currentPose[2]
-                        + veloHistory[latestIdx].omegaRadiansPerSecond * 0.1
-                        + 1 / 2 * predictedRotAcc * Math.pow(0.1, 2);
+                        + veloHistory[latestIdx].omegaRadiansPerSecond * 0.08
+                        + 1 / 2 * predictedRotAcc * Math.pow(0.08, 2);
 
         if (predOmega > Math.PI) {
             predicted[2] = predOmega - 2 * Math.PI;

@@ -1,54 +1,43 @@
 package igknighters.subsystems.indexer;
 
-import edu.wpi.first.wpilibj2.command.SubsystemBase;
-import igknighters.Robot;
-import igknighters.subsystems.indexer.launcherRollers.*;
-import igknighters.subsystems.indexer.launcherRollers.ExitRollers;
-import igknighters.subsystems.indexer.spindexer.*;
-import igknighters.subsystems.indexer.spindexer.Spindexer;
-import igknighters.subsystems.indexer.spindexer.SpindexerSim;
+import static edu.wpi.first.units.Units.RPM;
 
-public class Indexer extends SubsystemBase {
-    private Spindexer spindexer;
-    private ExitRollers exitRollers;
-    private final IndexerVisualizer visualizer = new IndexerVisualizer();
+import edu.wpi.first.wpilibj2.command.Command;
+import edu.wpi.first.wpilibj2.command.Commands;
+import igknighters.subsystems.indexer.launcherRollers.*;
+import igknighters.subsystems.indexer.spindexer.*;
+
+public class Indexer {
+    public ExitRollersBase exitRollers;
+    public SpindexerBase spindexer;
 
     public Indexer() {
-        if (Robot.isReal()) {
-            spindexer = new SpindexerReal();
-            exitRollers = new ExitRollersReal();
-
-        } else {
-            spindexer = new SpindexerSim();
-            exitRollers = new ExitRollersSim();
-        }
+        spindexer = new SpindexerFunctioning();
+        exitRollers = new ExitRollersFunctioning();
     }
 
-    public void setRPM(double RPM) {
-        spindexer.goToRPM(RPM);
+    public Command goToState(IndexerState state) {
+        return Commands.parallel(
+                spindexer
+                        .setVelocity(RPM.of(state.getSpindexerRPM()))
+                        .withName("SET SPEED SPINDEXER AT, " + state.getSpindexerRPM() + " RPM"),
+                exitRollers
+                        .setVelocity(RPM.of(state.getExitRollerRPM()))
+                        .withName(
+                                "SET SPEED EXIT ROLLERS AT, " + state.getExitRollerRPM() + " RPM"));
     }
 
-    public double getSpindexerRPM() {
-        return spindexer.getRPM();
+    public void goToStateNotCommand(IndexerState state) {
+        spindexer.setVelocitySetpoint(RPM.of(state.getSpindexerRPM()));
+        exitRollers.setVelocitySetpoint(RPM.of(state.getExitRollerRPM()));
     }
 
-    public double getExitRollerRPM() {
-        return exitRollers.getSpeedRPM();
-    }
-
-    public void goToState(IndexerState state) {
-        spindexer.goToRPM(state.getSpindexerRPM());
-        exitRollers.setSpeedRPM(state.getExitRollerRPM());
-    }
-
-    public void stop() {
-        spindexer.stop();
-    }
-
-    @Override
-    public void periodic() {
-        spindexer.periodic();
-        exitRollers.periodic();
-        visualizer.update(spindexer.getRPM(), exitRollers.getSpeedRPM());
+    public Command idleSpindexer() {
+        return Commands.repeatingSequence(
+                        spindexer.setVelocity(RPM.of(1000)).withTimeout(.2),
+                        spindexer.setVelocity(RPM.of(0.0)).withTimeout(.2),
+                        spindexer.setVelocity(RPM.of(-1000)).withTimeout(.2),
+                        spindexer.setVelocity(RPM.of(0.0)).withTimeout(.2))
+                .withName("IDLE SPINDEXER - DEFAULT COMMAND");
     }
 }
