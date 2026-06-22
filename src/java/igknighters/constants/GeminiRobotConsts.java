@@ -398,7 +398,7 @@ public class GeminiRobotConsts extends RobotConsts {
     public static class GeminiFlywheelsConsts implements kFlywheelsConsts {
         @Override
         public int LEADER_MOTOR_ID() {
-            return 21;
+            return 50;
         }
 
         @Override
